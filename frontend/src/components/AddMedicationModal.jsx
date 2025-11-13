@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useState } from "react";
 import api from "../api";
 
-export default function EditarCompartimento() {
-  const { id, compartimento } = useParams();
-  const navigate = useNavigate();
+const colors = [
+  { hex: "#f28b82", name: "Rojo" },
+  { hex: "#fbbc04", name: "Amarillo" },
+  { hex: "#34a853", name: "Verde" },
+  { hex: "#4285f4", name: "Azul" }
+];
 
+export default function AddMedicationModal({ isOpen, onClose, onSuccess }) {
   const [form, setForm] = useState({
-    compartimento: compartimento ? parseInt(compartimento) : 1,
+    compartimento: 1,
     nombre_pastilla: "",
     dosis: 1,
     stock: 0,
@@ -19,12 +22,6 @@ export default function EditarCompartimento() {
     fecha_fin: "",
     activo: true,
   });
-
-  useEffect(() => {
-    if (id && !compartimento) {
-      api.get(`tratamientos/${id}/`).then((res) => setForm(res.data));
-    }
-  }, [id, compartimento]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -56,25 +53,39 @@ export default function EditarCompartimento() {
       cleanForm.intervalo_horas = null;
     }
 
-    const request = id && !compartimento
-      ? api.put(`tratamientos/${id}/`, cleanForm)
-      : api.post("tratamientos/", cleanForm);
-
-    request
-      .then(() => navigate("/dashboard"))
+    api.post("tratamientos/", cleanForm)
+      .then(() => {
+        // Reset form
+        setForm({
+          compartimento: 1,
+          nombre_pastilla: "",
+          dosis: 1,
+          stock: 0,
+          repeticion: "DIARIO",
+          intervalo_horas: "",
+          hora_toma: "",
+          dia_semana: "",
+          fecha_inicio: "",
+          fecha_fin: "",
+          activo: true,
+        });
+        onSuccess();
+      })
       .catch((err) => {
         console.error("Error del backend:", err.response?.data);
         alert("Error: " + JSON.stringify(err.response?.data));
       });
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50">
-      {/* Header con botón de regreso */}
-      <div className="bg-white shadow-md">
+    <div className="fixed inset-0 bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      {/* Header */}
+      <div className="absolute top-0 left-0 right-0 bg-white shadow-md z-10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={onClose}
             className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 font-medium transition"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,20 +105,48 @@ export default function EditarCompartimento() {
         </div>
       </div>
 
-      {/* Formulario */}
-      <div className="flex items-center justify-center px-4 py-8">
-        <form
-          onSubmit={handleSubmit}
-          className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-xl space-y-6 border border-emerald-100"
-        >
-          {/* Header */}
+      {/* Form */}
+      <div className="w-full max-w-xl mt-24 mb-8">
+        <form onSubmit={handleSubmit} className="bg-white p-8 rounded-2xl shadow-2xl space-y-6 border border-emerald-100">
+          {/* Header del formulario */}
           <div className="text-center">
             <h1 className="text-3xl font-extrabold text-emerald-700">
-              Compartimento {form.compartimento}
+              Agregar Medicamento
             </h1>
             <p className="text-gray-500 mt-1">
               Configura las pastillas, dosis y horarios
             </p>
+          </div>
+
+          {/* Compartimento */}
+          <div>
+            <label className="block font-semibold text-gray-700 mb-3">
+              Compartimento
+            </label>
+            <div className="grid grid-cols-4 gap-3">
+              {colors.map((color, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => setForm({ ...form, compartimento: index + 1 })}
+                  className={`h-20 rounded-xl transition-all ${
+                    form.compartimento === index + 1
+                      ? 'ring-4 ring-gray-800 scale-105'
+                      : 'ring-2 ring-gray-200 hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: color.hex }}
+                >
+                  <div className="text-white font-bold text-lg">
+                    {index + 1}
+                  </div>
+                  {form.compartimento === index + 1 && (
+                    <svg className="w-8 h-8 mx-auto text-white drop-shadow-lg" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Nombre pastilla */}
@@ -126,39 +165,39 @@ export default function EditarCompartimento() {
             />
           </div>
 
-          {/* Dosis */}
-          <div>
-            <label className="block font-semibold text-gray-700 mb-1">
-              Dosis (cantidad por toma)
-            </label>
-            <input
-              type="number"
-              name="dosis"
-              value={form.dosis}
-              onChange={handleChange}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
-              min="1"
-              required
-            />
+          {/* Dosis y Stock */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold text-gray-700 mb-1">
+                Dosis (por toma)
+              </label>
+              <input
+                type="number"
+                name="dosis"
+                value={form.dosis}
+                onChange={handleChange}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
+                min="1"
+                required
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-gray-700 mb-1">
+                Stock (pastillas)
+              </label>
+              <input
+                type="number"
+                name="stock"
+                value={form.stock}
+                onChange={handleChange}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
+                min="0"
+              />
+            </div>
           </div>
-
-          {/* Stock */}
-          <div>
-            <label className="block font-semibold text-gray-700 mb-1">
-              Stock (número de pastillas)
-            </label>
-            <input
-              type="number"
-              name="stock"
-              value={form.stock}
-              onChange={handleChange}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
-              min="0"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              El stock disminuirá automáticamente en cada toma
-            </p>
-          </div>
+          <p className="text-xs text-gray-500 -mt-4">
+            El stock disminuirá automáticamente en cada toma
+          </p>
 
           {/* Repetición */}
           <div>
@@ -177,7 +216,7 @@ export default function EditarCompartimento() {
             </select>
           </div>
 
-          {/* Condicionales */}
+          {/* Condicionales según repetición */}
           {form.repeticion === "CADA_X_HORAS" && (
             <div>
               <label className="block font-semibold text-gray-700 mb-1">
@@ -186,7 +225,7 @@ export default function EditarCompartimento() {
               <input
                 type="number"
                 name="intervalo_horas"
-                placeholder="Ej: cada 8 horas"
+                placeholder="Ej: 8"
                 value={form.intervalo_horas}
                 onChange={handleChange}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
@@ -211,36 +250,43 @@ export default function EditarCompartimento() {
           )}
 
           {form.repeticion === "SEMANAL" && (
-            <div className="space-y-2">
-              <label className="block font-semibold text-gray-700 mb-1">
-                Día y hora
-              </label>
-              <select
-                name="dia_semana"
-                value={form.dia_semana}
-                onChange={handleChange}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none bg-white"
-              >
-                <option value="">Selecciona un día</option>
-                <option value="0">Lunes</option>
-                <option value="1">Martes</option>
-                <option value="2">Miércoles</option>
-                <option value="3">Jueves</option>
-                <option value="4">Viernes</option>
-                <option value="5">Sábado</option>
-                <option value="6">Domingo</option>
-              </select>
-              <input
-                type="time"
-                name="hora_toma"
-                value={form.hora_toma}
-                onChange={handleChange}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
-              />
+            <div className="space-y-4">
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">
+                  Día de la semana
+                </label>
+                <select
+                  name="dia_semana"
+                  value={form.dia_semana}
+                  onChange={handleChange}
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none bg-white"
+                >
+                  <option value="">Selecciona un día</option>
+                  <option value="0">Lunes</option>
+                  <option value="1">Martes</option>
+                  <option value="2">Miércoles</option>
+                  <option value="3">Jueves</option>
+                  <option value="4">Viernes</option>
+                  <option value="5">Sábado</option>
+                  <option value="6">Domingo</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">
+                  Hora de la toma
+                </label>
+                <input
+                  type="time"
+                  name="hora_toma"
+                  value={form.hora_toma}
+                  onChange={handleChange}
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
+                />
+              </div>
             </div>
           )}
 
-          {/* Fechas */}
+          {/* Fechas opcionales */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block font-semibold text-gray-700 mb-1">
