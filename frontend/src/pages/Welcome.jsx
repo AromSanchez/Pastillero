@@ -8,29 +8,21 @@ export default function Welcome() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full text-center">
         {/* Logo */}
-        <div className="mb-8 flex justify-center">
-          <div className="w-32 h-32 bg-emerald-500 rounded-full flex items-center justify-center shadow-xl">
-            <svg
-              className="w-16 h-16 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-              />
-            </svg>
-          </div>
+        <div className="mb-6 flex flex-col items-center justify-center">
+          <img
+            src="/logito.png"
+            alt="Ícono Dulce Dosis"
+            className="w-48 h-48 object-contain drop-shadow-xl"
+          />
+          <img
+            src="/dulce.png"
+            alt="Texto Dulce Dosis"
+            className="mt-0 w-60 object-contain"
+          />
         </div>
 
-        {/* Título */}
-        <h1 className="text-5xl font-bold text-gray-900 mb-4">MediCare</h1>
-        
         {/* Subtítulo */}
-        <p className="text-lg text-gray-600 mb-12">
+        <p className="text-lg text-gray-600 mb-12 mt-2">
           Tu asistente confiable para gestionar tus medicamentos diarios
         </p>
 

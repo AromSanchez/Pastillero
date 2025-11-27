@@ -143,3 +143,7 @@ REST_FRAMEWORK = {
 # Configuración de Telegram: se leen desde variables de entorno
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8551131249:AAEfry7Q9v-eVNXVq2atPW3WaS5y4vAtrIY")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "5936427853")
+
+# Configuración de email para desarrollo: imprime los correos en la consola
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'no-reply@pastillero.local'

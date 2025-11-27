@@ -20,6 +20,35 @@ export default function EditarCompartimento() {
     activo: true,
   });
 
+  // Calcula fecha_fin automáticamente para repetición DIARIO
+  const calcularFechaFinAuto = (formData) => {
+    try {
+      if (formData.repeticion !== "DIARIO") return formData.fecha_fin;
+      if (!formData.fecha_inicio) return formData.fecha_fin;
+
+      const stock = parseInt(formData.stock, 10);
+      const dosis = parseInt(formData.dosis, 10);
+      if (isNaN(stock) || isNaN(dosis) || dosis <= 0) return formData.fecha_fin;
+
+      const dias = Math.floor(stock / dosis);
+      if (dias <= 0) return formData.fecha_fin;
+
+      const inicio = new Date(formData.fecha_inicio);
+      if (isNaN(inicio.getTime())) return formData.fecha_fin;
+
+      const fin = new Date(inicio);
+      // Ejemplo: 10 pastillas, dosis 1, fecha_inicio 01 → dura 10 días (01 al 10)
+      fin.setDate(fin.getDate() + dias - 1);
+
+      const year = fin.getFullYear();
+      const month = String(fin.getMonth() + 1).padStart(2, "0");
+      const day = String(fin.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    } catch {
+      return formData.fecha_fin;
+    }
+  };
+
   useEffect(() => {
     if (id && !compartimento) {
       api.get(`tratamientos/${id}/`).then((res) => setForm(res.data));
@@ -28,7 +57,17 @@ export default function EditarCompartimento() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm({ ...form, [name]: value });
+    let newForm = { ...form, [name]: value };
+
+    // Recalcular fecha_fin automáticamente para tratamientos DIARIO
+    if (newForm.repeticion === "DIARIO" && ["stock", "dosis", "fecha_inicio", "repeticion"].includes(name)) {
+      const autoFin = calcularFechaFinAuto(newForm);
+      if (autoFin) {
+        newForm.fecha_fin = autoFin;
+      }
+    }
+
+    setForm(newForm);
   };
 
   const handleSubmit = (e) => {
@@ -83,19 +122,18 @@ export default function EditarCompartimento() {
             Volver al Dashboard
           </button>
           <div className="flex-1" />
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
-            </div>
-            <span className="font-semibold text-gray-700">MediCare</span>
+          <div className="flex items-center justify-center">
+            <img
+              src="/dashboard.png"
+              alt="Logo"
+              className="w-16 h-16 object-contain drop-shadow-sm"
+            />
           </div>
         </div>
       </div>
 
       {/* Formulario con padding-top para compensar el header fijo */}
-      <div className="flex items-center justify-center px-4 py-8 pt-24">
+      <div className="flex items-center justify-center px-4 py-8 pt-32">
         <form
           onSubmit={handleSubmit}
           className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-xl space-y-6 border border-emerald-100"

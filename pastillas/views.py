@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.conf import settings
 import requests
-from .models import Tratamiento, HistorialToma
+from .models import Tratamiento, HistorialToma, ConfiguracionNotificaciones
 from .serializers import TratamientoSerializer, HistorialTomaSerializer, RegistrarTomaSerializer
 
 class TratamientoViewSet(viewsets.ModelViewSet):
@@ -34,6 +34,13 @@ def enviar_mensaje_telegram(texto: str) -> bool:
 
     Devuelve True si aparentemente se envió bien, False en caso contrario.
     """
+    try:
+        config = ConfiguracionNotificaciones.objects.first()
+        if config and not config.telegram_activo:
+            return False
+    except Exception:
+        pass
+
     bot_token = getattr(settings, "TELEGRAM_BOT_TOKEN", "")
     chat_id = getattr(settings, "TELEGRAM_CHAT_ID", "")
 

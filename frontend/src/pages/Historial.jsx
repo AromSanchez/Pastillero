@@ -11,6 +11,14 @@ export default function Historial() {
   const [tratamientos, setTratamientos] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Utilidad: formatear una fecha a YYYY-MM-DD usando la hora local
+  const getFechaLocalStr = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   useEffect(() => {
     // Esperar a que termine de cargar el estado de autenticación
     if (authLoading) return;
@@ -30,8 +38,8 @@ export default function Historial() {
         api.get("tratamientos/")
       ]);
       
-      console.log("📊 Historial recibido:", historialRes.data);
-      console.log("💊 Tratamientos recibidos:", tratamientosRes.data);
+      console.log(" Historial recibido:", historialRes.data);
+      console.log(" Tratamientos recibidos:", tratamientosRes.data);
       
       setHistorial(historialRes.data);
       setTratamientos(tratamientosRes.data);
@@ -52,7 +60,9 @@ export default function Historial() {
   // Generar historial completo combinando tratamientos programados con registros reales
   const generarHistorialCompleto = () => {
     const historialCompleto = {};
+    // Usar "hoy" sin hora (medianoche local) para comparar solo por día
     const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
     
     // 1. Primero, crear entradas para todos los tratamientos programados
     tratamientos.forEach(tratamiento => {
@@ -60,11 +70,15 @@ export default function Historial() {
       
       const fechaInicio = new Date(tratamiento.fecha_inicio);
       const fechaFin = tratamiento.fecha_fin ? new Date(tratamiento.fecha_fin) : new Date();
-      
+
       let fechaActual = new Date(fechaInicio);
-      
+      // Normalizar a medianoche local para comparar solo fechas
+      fechaActual.setHours(0, 0, 0, 0);
+
       while (fechaActual <= fechaFin && fechaActual <= hoy) {
-        const fechaStr = fechaActual.toISOString().split('T')[0];
+        // Usar siempre la fecha local (no UTC) para agrupar
+        const fechaStr = getFechaLocalStr(fechaActual);
+        
         const diaSemana = fechaActual.getDay();
         
         // Verificar si corresponde según repetición
@@ -74,40 +88,62 @@ export default function Historial() {
         if (tratamiento.repeticion === 'FINES DE SEMANA' && (diaSemana === 0 || diaSemana === 6)) debeTomar = true;
         
         if (debeTomar) {
-          if (!historialCompleto[fechaStr]) {
-            historialCompleto[fechaStr] = [];
+          // Regla importante:
+          // - Para días ANTERIORES a hoy, NO creamos entradas "programadas" automáticamente.
+          //   Solo se mostrarán si hay un registro real (TOMADA u OMITIDA) desde el backend.
+          // - Solo para HOY se crean entradas programadas PENDIENTE,
+          //   y solo si NO existe ya un registro real para ese tratamiento y día.
+          const esHoy = fechaActual.getTime() === hoy.getTime();
+
+          if (esHoy) {
+            // ¿Ya hay un registro real (del backend) para este tratamiento y este día?
+            const existeRegistroRealHoy = historial.some((reg) => {
+              const fechaReg = new Date(reg.fecha_hora_real);
+              const fechaRegStr = getFechaLocalStr(fechaReg);
+              const mismoDia = fechaRegStr === fechaStr;
+
+              const coincideTratamiento = reg.tratamiento_id === tratamiento.id;
+              const coincideNombre = (reg.nombre_pastilla || '').toLowerCase() === tratamiento.nombre_pastilla.toLowerCase();
+
+              return mismoDia && (coincideTratamiento || coincideNombre);
+            });
+
+            if (!existeRegistroRealHoy) {
+              if (!historialCompleto[fechaStr]) {
+                historialCompleto[fechaStr] = [];
+              }
+
+              // Crear una entrada "programada" solo para hoy
+              const [hora, minuto] = tratamiento.hora_toma.split(':');
+              const fechaHoraToma = new Date(fechaActual);
+              fechaHoraToma.setHours(parseInt(hora), parseInt(minuto), 0, 0);
+
+              historialCompleto[fechaStr].push({
+                id: `programado-${tratamiento.id}-${fechaStr}`,
+                tratamiento_id: tratamiento.id,
+                nombre_pastilla: tratamiento.nombre_pastilla,
+                fecha_hora_real: fechaHoraToma.toISOString(),
+                // Importante: las entradas programadas nunca se marcan como OMITIDA aquí.
+                // El estado OMITIDA solo debe provenir de registros reales enviados por el backend.
+                estado: 'PENDIENTE',
+                esRegistroReal: false,
+                compartimento: tratamiento.compartimento
+              });
+            }
           }
-          
-          // Crear una entrada "programada"
-          const [hora, minuto] = tratamiento.hora_toma.split(':');
-          const fechaHoraToma = new Date(fechaActual);
-          fechaHoraToma.setHours(parseInt(hora), parseInt(minuto), 0, 0);
-          
-          const yaPaso = fechaHoraToma < new Date();
-          
-          historialCompleto[fechaStr].push({
-            id: `programado-${tratamiento.id}-${fechaStr}`,
-            tratamiento_id: tratamiento.id,
-            nombre_pastilla: tratamiento.nombre_pastilla,
-            fecha_hora_real: fechaHoraToma.toISOString(),
-            // Importante: las entradas programadas nunca se marcan como OMITIDA aquí.
-            // El estado OMITIDA solo debe provenir de registros reales enviados por el backend.
-            estado: 'PENDIENTE',
-            esRegistroReal: false,
-            compartimento: tratamiento.compartimento
-          });
         }
-        
+
         fechaActual.setDate(fechaActual.getDate() + 1);
       }
     });
     
     // 2. Sobrescribir con los registros reales del historial
     historial.forEach(registro => {
-      console.log("🔍 Procesando registro:", registro);
+      console.log(" Procesando registro:", registro);
       
       const fecha = new Date(registro.fecha_hora_real);
-      const fechaStr = fecha.toISOString().split('T')[0];
+      // Importante: usar la fecha local (no UTC) para evitar adelantarse de día
+      const fechaStr = getFechaLocalStr(fecha);
       
       if (!historialCompleto[fechaStr]) {
         // Si no existe la fecha, crear nueva entrada directamente del historial
@@ -194,14 +230,16 @@ export default function Historial() {
       <aside className="w-72 bg-gradient-to-b from-emerald-700 to-emerald-900 text-white p-6 flex flex-col h-screen">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
+            <div className="w-12 h-12 flex items-center justify-center">
+              <img
+                src="/logito.png"
+                alt="Logo Dulce Dosis"
+                className="w-12 h-12 object-contain drop-shadow-xl"
+              />
             </div>
-            <h1 className="text-2xl font-bold">MediCare</h1>
+            <h1 className="text-2xl font-bold">Dulce Dosis</h1>
           </div>
-          <p className="text-emerald-200 text-sm ml-13">Gestión de medicamentos</p>
+          <p className="text-emerald-200 text-sm ml-1">Gestión de medicamentos</p>
         </div>
 
         <nav className="flex-1 space-y-2">

@@ -6,6 +6,9 @@ import Home from "./pages/Home";
 import EditarCompartimento from "./pages/EditarCompartimento";
 import Historial from "./pages/Historial";
 import Ajustes from "./pages/Ajustes"; // ✅ AÑADIDO
+import ForgotPassword from "./pages/ForgotPassword";
+import ForgotPasswordSent from "./pages/ForgotPasswordSent";
+import ResetPassword from "./pages/ResetPassword";
 import './App.css';
 
 function App() {
@@ -18,6 +21,9 @@ function App() {
         {/* Autenticación */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/forgot-password/sent" element={<ForgotPasswordSent />} />
+        <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
         
         {/* Dashboard principal */}
         <Route path="/dashboard" element={<Home />} />

@@ -115,19 +115,18 @@ export default function AddMedicationModal({ isOpen, onClose, onSuccess }) {
             Volver al Dashboard
           </button>
           <div className="flex-1" />
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
-            </div>
-            <span className="font-semibold text-gray-700">MediCare</span>
+          <div className="flex items-center justify-center">
+            <img
+              src="/dashboard.png"
+              alt="Logo"
+              className="w-16 h-16 object-contain drop-shadow-sm"
+            />
           </div>
         </div>
       </div>
 
       {/* Form */}
-      <div className="w-full max-w-xl mt-40 mb-8">
+      <div className="w-full max-w-xl mt-80 mb-8">
         <form onSubmit={handleSubmit} className="bg-white p-8 rounded-2xl shadow-2xl space-y-6 border border-emerald-100">
           {/* Header del formulario */}
           <div className="text-center">

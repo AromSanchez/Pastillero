@@ -2,6 +2,13 @@ from django.db import models
 from django.utils import timezone
 from datetime import timedelta
 
+class ConfiguracionNotificaciones(models.Model):
+    telegram_activo = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"Notificaciones (Telegram activo: {self.telegram_activo})"
+
+
 class Tratamiento(models.Model):
     REPETICION_CHOICES = [
         ("DIARIO", "Diario"),

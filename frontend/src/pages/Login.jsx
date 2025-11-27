@@ -116,23 +116,15 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8">
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <svg
-              className="w-10 h-10 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-              />
-            </svg>
+          <div className="mb-4 flex justify-center">
+            <img
+              src="/logito.png"
+              alt="Logo Dulce Dosis"
+              className="w-28 h-28 object-contain drop-shadow-xl"
+            />
           </div>
           <h2 className="text-3xl font-bold text-gray-900">Iniciar sesión</h2>
-          <p className="text-gray-600 mt-2">Bienvenido de vuelta a MediCare</p>
+          <p className="text-gray-600 mt-2">Bienvenido de vuelta a Dulce Dosis</p>
         </div>
 
         {error && (
@@ -170,8 +162,8 @@ export default function Login() {
             />
           </div>
 
-          <div className="flex items-center justify-between">
-            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+          <div className="flex items-center justify-between text-sm">
+            <label className="inline-flex items-center gap-2 text-gray-700">
               <input
                 type="checkbox"
                 checked={rememberMe}
@@ -180,6 +172,14 @@ export default function Login() {
               />
               <span>Recordarme</span>
             </label>
+
+            <button
+              type="button"
+              onClick={() => navigate("/forgot-password")}
+              className="text-emerald-600 hover:text-emerald-700 font-medium"
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
           </div>
 
           <button

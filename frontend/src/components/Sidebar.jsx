@@ -46,14 +46,16 @@ export default function Sidebar() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-            </svg>
+          <div className="w-12 h-12 flex items-center justify-center">
+            <img
+              src="/logito.png"
+              alt="Logo Dulce Dosis"
+              className="w-12 h-12 object-contain drop-shadow-xl"
+            />
           </div>
-          <h1 className="text-2xl font-bold">MediCare</h1>
+          <h1 className="text-2xl font-bold">Dulce Dosis</h1>
         </div>
-        <p className="text-emerald-200 text-sm ml-13">Gestión de medicamentos</p>
+        <p className="text-emerald-200 text-sm ml-1">Gestión de medicamentos</p>
       </div>
 
       {/* Navigation */}

@@ -28,9 +28,22 @@ const unsigned long debounceDelay = 200;
 
 bool buzzerSilenciado = false;
 
+// Estado del patrón de sonido del buzzer (beeps agradables)
+bool buzzerEncendido = false;
+unsigned long ultimoCambioBuzzer = 0;
+const unsigned long BUZZER_TIEMPO_ON = 300;   // ms encendido
+const unsigned long BUZZER_TIEMPO_OFF = 200;  // ms apagado
+
 bool alarmaActiva = false;
 unsigned long tiempoInicioAlarma = 0;
 const unsigned long TIMEOUT_ALARMA = 300000; 
+
+int compartimientosEnAlarma[4];
+int countCompartimientosEnAlarma = 0;
+
+// Refresco periódico de tratamientos desde el backend
+unsigned long ultimoFetchTratamientos = 0;
+const unsigned long INTERVALO_FETCH_MS = 30000;  // 30 segundos
 
 const char* servidorNTP = "pool.ntp.org";
 const long desfaseGMT_segundos = -5 * 3600; 
@@ -91,8 +104,8 @@ void loop() {
   int hora = timeinfo.tm_hour;
   int minuto = timeinfo.tm_min;
 
-  int compartimientosActivos[4];
-  int countActivos = 0;
+  int compartimientosDetectados[4];
+  int countDetectados = 0;
 
   for (int i = 0; i < 4; i++) {
     if (tratamientos[i].compartimento != -1) {
@@ -101,36 +114,53 @@ void loop() {
 
       if(hora == th && minuto == tm){
         if (!tomaRegistrada[i]) {
-          compartimientosActivos[countActivos] = i;
-          countActivos++;
+          compartimientosDetectados[countDetectados] = i;
+          countDetectados++;
         }
       }
     }
   }
 
-  if(countActivos > 0){
-    if (!alarmaActiva) {
-      alarmaActiva = true;
-      tiempoInicioAlarma = millis();
-      Serial.println("¡ALARMA ACTIVADA!");
-
-      for (int i = 0; i < countActivos; i++) {
-        int idx = compartimientosActivos[i];
-        if (tratamientos[idx].id != -1) {
-          notificarRecordatorioEnBackend(tratamientos[idx].id);
-        }
-      }
+  // Si hay nuevos compartimientos detectados en la hora exacta y no había alarma, iniciarla
+  if (countDetectados > 0 && !alarmaActiva) {
+    alarmaActiva = true;
+    tiempoInicioAlarma = millis();
+    countCompartimientosEnAlarma = countDetectados;
+    for (int i = 0; i < countDetectados; i++) {
+      compartimientosEnAlarma[i] = compartimientosDetectados[i];
     }
 
+    Serial.println("¡ALARMA ACTIVADA!");
+
+    for (int i = 0; i < countCompartimientosEnAlarma; i++) {
+      int idx = compartimientosEnAlarma[i];
+      if (tratamientos[idx].id != -1) {
+        notificarRecordatorioEnBackend(tratamientos[idx].id);
+      }
+    }
+  }
+
+  if (alarmaActiva) {
     digitalWrite(LED_PIN, HIGH);
     if(!buzzerSilenciado){
-      digitalWrite(BUZZER_PIN, HIGH);
+      // Patrón de beeps no bloqueante
+      unsigned long ahora = millis();
+      unsigned long intervalo = buzzerEncendido ? BUZZER_TIEMPO_ON : BUZZER_TIEMPO_OFF;
+      if (ahora - ultimoCambioBuzzer >= intervalo) {
+        buzzerEncendido = !buzzerEncendido;
+        ultimoCambioBuzzer = ahora;
+        digitalWrite(BUZZER_PIN, buzzerEncendido ? HIGH : LOW);
+      }
+    } else {
+      // Si está silenciado, asegurarnos de que esté en LOW
+      buzzerEncendido = false;
+      digitalWrite(BUZZER_PIN, LOW);
     }
 
     if (millis() - tiempoInicioAlarma > TIMEOUT_ALARMA) {
       Serial.println("Timeout - Medicamento OMITIDO");
-      for (int i = 0; i < countActivos; i++) {
-        int idx = compartimientosActivos[i];
+      for (int i = 0; i < countCompartimientosEnAlarma; i++) {
+        int idx = compartimientosEnAlarma[i];
         if (!tomaRegistrada[idx]) {
           registrarTomaEnBackend(tratamientos[idx].id, "OMITIDA");
           tomaRegistrada[idx] = true;
@@ -140,25 +170,35 @@ void loop() {
       }
       alarmaActiva = false;
       buzzerSilenciado = false;
+      buzzerEncendido = false;
       digitalWrite(LED_PIN, LOW);
       digitalWrite(BUZZER_PIN, LOW);
       delay(60000); 
     }
 
   } else {
-    // No hay medicamentos pendientes
-    alarmaActiva = false;
+    // No hay alarma activa
     digitalWrite(LED_PIN, LOW);
     digitalWrite(BUZZER_PIN, LOW);
     buzzerSilenciado = false;
+    buzzerEncendido = false;
     // No cerrar servos automáticamente aquí: se cerrarán solo cuando el usuario
     // vuelva a presionar el botón (modo sin toma activa en manejarBoton).
   }
 
   // Manejar pulsos del botón en cualquier estado:
-  // - Si hay compartimientos activos (countActivos > 0 y alarmaActiva): abrir y registrar TOMADA.
-  // - Si no hay activos (countActivos == 0): permitir cerrar compartimientos que quedaron abiertos.
-  manejarBoton(compartimientosActivos, countActivos);
+  // - Si hay compartimientos en alarma (countCompartimientosEnAlarma > 0 y alarmaActiva): abrir y registrar TOMADA.
+  // - Si no hay alarma activa: permitir cerrar compartimientos que quedaron abiertos.
+  manejarBoton(compartimientosEnAlarma, countCompartimientosEnAlarma);
+
+  // Refrescar tratamientos desde el backend cada cierto tiempo cuando no hay alarma activa
+  if (!alarmaActiva) {
+    unsigned long ahora = millis();
+    if (ahora - ultimoFetchTratamientos >= INTERVALO_FETCH_MS) {
+      obtenerTratamientos();
+      ultimoFetchTratamientos = ahora;
+    }
+  }
 
   delay(100);
 }
@@ -180,9 +220,8 @@ void obtenerTratamientos() {
         tratamientos[i].nombre_pastilla = "";
         tratamientos[i].repeticion = "";
         tratamientos[i].hora_toma = "";
-        // Resetear el estado de la toma con la nueva programación
-        tomaRegistrada[i] = false;
-        yaAbrio[i] = false;
+        // Importante: NO resetear aquí tomaRegistrada ni yaAbrio para no
+        // reactivar alarmas ya atendidas cuando se refrescan los datos.
       }
 
       struct tm timeinfo;
@@ -201,12 +240,21 @@ void obtenerTratamientos() {
           int tm = horaStr.substring(3,5).toInt();
           int minutosTratamiento = th * 60 + tm;
 
+          // Guardar valores anteriores para saber si realmente cambió algo
+          int idAnterior = tratamientos[idx].id;
+          String horaAnterior = tratamientos[idx].hora_toma;
+
           if (tratamientos[idx].compartimento == -1) {
+            // Nuevo tratamiento en este compartimento
             tratamientos[idx].id = t["id"];
             tratamientos[idx].compartimento = comp;
             tratamientos[idx].nombre_pastilla = String((const char*)t["nombre_pastilla"]);
             tratamientos[idx].repeticion = String((const char*)t["repeticion"]);
             tratamientos[idx].hora_toma = horaStr;
+
+            // Como es nuevo, aseguramos que pueda sonar la alarma
+            tomaRegistrada[idx] = false;
+            yaAbrio[idx] = false;
           } else {
             int th_guardado = tratamientos[idx].hora_toma.substring(0,2).toInt();
             int tm_guardado = tratamientos[idx].hora_toma.substring(3,5).toInt();
@@ -218,6 +266,12 @@ void obtenerTratamientos() {
               tratamientos[idx].nombre_pastilla = String((const char*)t["nombre_pastilla"]);
               tratamientos[idx].repeticion = String((const char*)t["repeticion"]);
               tratamientos[idx].hora_toma = horaStr;
+
+              // Solo resetear flags si realmente cambió el tratamiento (id u hora)
+              if (tratamientos[idx].id != idAnterior || tratamientos[idx].hora_toma != horaAnterior) {
+                tomaRegistrada[idx] = false;
+                yaAbrio[idx] = false;
+              }
             }
           }
         }
@@ -274,6 +328,7 @@ void manejarBoton(int compartimientosActivos[], int count) {
       digitalWrite(BUZZER_PIN, LOW);
       digitalWrite(LED_PIN, LOW);
       buzzerSilenciado = true;
+      buzzerEncendido = false;
 
       for (int i = 0; i < count; i++) {
         int idx = compartimientosActivos[i];
@@ -300,12 +355,14 @@ void manejarBoton(int compartimientosActivos[], int count) {
       // Resetear alarma después de gestionar el compartimiento
       alarmaActiva = false;
     } else {
-      // Modo "sin toma activa": solo permitir cerrar compartimentos que quedaron abiertos
-      for (int i = 0; i < 4; i++) {
-        if (servoStates[i]) {
-          servos[i].write(0);
-          servoStates[i] = false;
-          Serial.println("Cerrar compartimento " + String(i + 1) + " tras toma registrada");
+      // Modo "sin toma activa": solo permitir cerrar compartimentos de la lista recibida,
+      // en el mismo orden y con 1 segundo de diferencia entre cada uno.
+      for (int i = 0; i < count; i++) {
+        int idx = compartimientosActivos[i];
+        if (servoStates[idx]) {
+          servos[idx].write(0);
+          servoStates[idx] = false;
+          Serial.println("Cerrar compartimento " + String(idx + 1) + " tras toma registrada");
           delay(1000);
         }
       }
