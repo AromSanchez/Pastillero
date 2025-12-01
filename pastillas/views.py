@@ -4,12 +4,62 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.conf import settings
 import requests
-from .models import Tratamiento, HistorialToma, ConfiguracionNotificaciones
+from .models import Tratamiento, HistorialToma, ConfiguracionNotificaciones, ConfiguracionArduino
 from .serializers import TratamientoSerializer, HistorialTomaSerializer, RegistrarTomaSerializer
+
+
+def notificar_arduino_actualizacion():
+    """Envía todos los tratamientos activos al Arduino vía POST.
+    
+    Retorna True si se envió correctamente, False en caso contrario.
+    """
+    try:
+        config = ConfiguracionArduino.objects.first()
+        if not config or not config.activo:
+            print("Arduino no configurado o inactivo")
+            return False
+        
+        tratamientos = Tratamiento.objects.filter(activo=True)
+        serializer = TratamientoSerializer(tratamientos, many=True)
+        
+        url = f"http://{config.ip_arduino}:{config.puerto}/actualizar"
+        response = requests.post(url, json=serializer.data, timeout=5)
+        
+        if response.status_code == 200:
+            print(f"✅ Arduino actualizado correctamente en {config.ip_arduino}")
+            return True
+        else:
+            print(f"❌ Error al actualizar Arduino: {response.status_code}")
+            return False
+    except requests.exceptions.Timeout:
+        print("⏱️ Timeout al conectar con Arduino")
+        return False
+    except requests.exceptions.ConnectionError:
+        print("🔌 No se pudo conectar con Arduino")
+        return False
+    except Exception as e:
+        print(f"❌ Error al notificar Arduino: {e}")
+        return False
+
 
 class TratamientoViewSet(viewsets.ModelViewSet):
     queryset = Tratamiento.objects.all()
     serializer_class = TratamientoSerializer
+    
+    def perform_create(self, serializer):
+        """Crear tratamiento y notificar al Arduino"""
+        serializer.save()
+        notificar_arduino_actualizacion()
+    
+    def perform_update(self, serializer):
+        """Actualizar tratamiento y notificar al Arduino"""
+        serializer.save()
+        notificar_arduino_actualizacion()
+    
+    def perform_destroy(self, instance):
+        """Eliminar tratamiento y notificar al Arduino"""
+        instance.delete()
+        notificar_arduino_actualizacion()
 
 
 class HistorialTomaViewSet(viewsets.ReadOnlyModelViewSet):

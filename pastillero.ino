@@ -2,11 +2,12 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "time.h"
-#include <ESP32Servo.h> 
+#include <ESP32Servo.h>
+#include <WebServer.h> 
 
 const char* ssid = "Alicia";
 const char* password = "lizzy1506";
-const char* server = "http://10.147.1.123:8000/api/tratamientos/";
+const char* backendURL = "http://10.147.1.123:8000/api/tratamientos/";
 const char* registrarTomaURL = "http://10.147.1.123:8000/api/registrar-toma/";
 const char* notificarRecordatorioURL = "http://10.147.1.123:8000/api/notificar-recordatorio/";
 
@@ -17,6 +18,9 @@ const int SERVO_PINS[4] = {5, 18, 19, 21};
 
 Servo servos[4];
 bool servoStates[4] = {false, false, false, false};
+
+// Servidor HTTP para recibir actualizaciones del backend
+WebServer server(80);
 
 bool tomaRegistrada[4] = {false, false, false, false};
 
@@ -40,10 +44,6 @@ const unsigned long TIMEOUT_ALARMA = 300000;
 
 int compartimientosEnAlarma[4];
 int countCompartimientosEnAlarma = 0;
-
-// Refresco periódico de tratamientos desde el backend
-unsigned long ultimoFetchTratamientos = 0;
-const unsigned long INTERVALO_FETCH_MS = 30000;  // 30 segundos
 
 const char* servidorNTP = "pool.ntp.org";
 const long desfaseGMT_segundos = -5 * 3600; 
@@ -83,6 +83,8 @@ void setup() {
 
   configTime(desfaseGMT_segundos, horarioVerano_segundos, servidorNTP);
   delay(2000);
+  Serial.print("IP del ESP32: ");
+  Serial.println(WiFi.localIP());
 
   struct tm timeinfo;
   if(getLocalTime(&timeinfo)){
@@ -91,10 +93,18 @@ void setup() {
     Serial.println("Error al obtener hora NTP");
   }
 
+  // Configurar servidor HTTP
+  server.on("/actualizar", HTTP_POST, handleActualizar);
+  server.begin();
+  Serial.println("Servidor HTTP iniciado en puerto 80");
+
   obtenerTratamientos();
 }
 
 void loop() {
+  // Procesar peticiones HTTP entrantes
+  server.handleClient();
+  
   struct tm timeinfo;
   if(!getLocalTime(&timeinfo)){
     delay(1000);
@@ -191,22 +201,13 @@ void loop() {
   // - Si no hay alarma activa: permitir cerrar compartimientos que quedaron abiertos.
   manejarBoton(compartimientosEnAlarma, countCompartimientosEnAlarma);
 
-  // Refrescar tratamientos desde el backend cada cierto tiempo cuando no hay alarma activa
-  if (!alarmaActiva) {
-    unsigned long ahora = millis();
-    if (ahora - ultimoFetchTratamientos >= INTERVALO_FETCH_MS) {
-      obtenerTratamientos();
-      ultimoFetchTratamientos = ahora;
-    }
-  }
-
   delay(100);
 }
 
 void obtenerTratamientos() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    http.begin(server);
+    http.begin(backendURL);
     int httpCode = http.GET();
 
     if (httpCode == 200) {
@@ -220,8 +221,9 @@ void obtenerTratamientos() {
         tratamientos[i].nombre_pastilla = "";
         tratamientos[i].repeticion = "";
         tratamientos[i].hora_toma = "";
-        // Importante: NO resetear aquí tomaRegistrada ni yaAbrio para no
-        // reactivar alarmas ya atendidas cuando se refrescan los datos.
+        // Resetear el estado de la toma con la nueva programación
+        tomaRegistrada[i] = false;
+        yaAbrio[i] = false;
       }
 
       struct tm timeinfo;
@@ -240,21 +242,12 @@ void obtenerTratamientos() {
           int tm = horaStr.substring(3,5).toInt();
           int minutosTratamiento = th * 60 + tm;
 
-          // Guardar valores anteriores para saber si realmente cambió algo
-          int idAnterior = tratamientos[idx].id;
-          String horaAnterior = tratamientos[idx].hora_toma;
-
           if (tratamientos[idx].compartimento == -1) {
-            // Nuevo tratamiento en este compartimento
             tratamientos[idx].id = t["id"];
             tratamientos[idx].compartimento = comp;
             tratamientos[idx].nombre_pastilla = String((const char*)t["nombre_pastilla"]);
             tratamientos[idx].repeticion = String((const char*)t["repeticion"]);
             tratamientos[idx].hora_toma = horaStr;
-
-            // Como es nuevo, aseguramos que pueda sonar la alarma
-            tomaRegistrada[idx] = false;
-            yaAbrio[idx] = false;
           } else {
             int th_guardado = tratamientos[idx].hora_toma.substring(0,2).toInt();
             int tm_guardado = tratamientos[idx].hora_toma.substring(3,5).toInt();
@@ -266,12 +259,6 @@ void obtenerTratamientos() {
               tratamientos[idx].nombre_pastilla = String((const char*)t["nombre_pastilla"]);
               tratamientos[idx].repeticion = String((const char*)t["repeticion"]);
               tratamientos[idx].hora_toma = horaStr;
-
-              // Solo resetear flags si realmente cambió el tratamiento (id u hora)
-              if (tratamientos[idx].id != idAnterior || tratamientos[idx].hora_toma != horaAnterior) {
-                tomaRegistrada[idx] = false;
-                yaAbrio[idx] = false;
-              }
             }
           }
         }
@@ -291,6 +278,92 @@ void obtenerTratamientos() {
     }
     http.end();
   }
+}
+
+void handleActualizar() {
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "Method Not Allowed");
+    return;
+  }
+  
+  String body = server.arg("plain");
+  DynamicJsonDocument doc(16384);
+  DeserializationError error = deserializeJson(doc, body);
+  
+  if (error) {
+    Serial.println("Error al parsear JSON: " + String(error.c_str()));
+    server.send(400, "text/plain", "Invalid JSON");
+    return;
+  }
+  
+  // Actualizar tratamientos desde el JSON recibido
+  actualizarTratamientosDesdeJSON(doc);
+  
+  server.send(200, "text/plain", "Tratamientos actualizados");
+  Serial.println("✅ Tratamientos actualizados desde backend");
+}
+
+void actualizarTratamientosDesdeJSON(DynamicJsonDocument& doc) {
+  // Resetear todos los tratamientos
+  for (int i = 0; i < 4; i++) {
+    tratamientos[i].id = -1;
+    tratamientos[i].compartimento = -1;
+    tratamientos[i].nombre_pastilla = "";
+    tratamientos[i].repeticion = "";
+    tratamientos[i].hora_toma = "";
+    tomaRegistrada[i] = false;
+    yaAbrio[i] = false;
+  }
+  
+  // Cargar nuevos datos (misma lógica que obtenerTratamientos)
+  struct tm timeinfo;
+  getLocalTime(&timeinfo);
+  int horaActual = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+  
+  for (JsonObject t : doc.as<JsonArray>()) {
+    int comp = t["compartimento"];
+    bool activo = t["activo"];
+    
+    if (activo && comp >= 1 && comp <= 4) {
+      int idx = comp - 1;
+      String horaStr = String((const char*)t["hora_toma"]);
+      int th = horaStr.substring(0,2).toInt();
+      int tm = horaStr.substring(3,5).toInt();
+      int minutosTratamiento = th * 60 + tm;
+      
+      if (tratamientos[idx].compartimento == -1) {
+        tratamientos[idx].id = t["id"];
+        tratamientos[idx].compartimento = comp;
+        tratamientos[idx].nombre_pastilla = String((const char*)t["nombre_pastilla"]);
+        tratamientos[idx].repeticion = String((const char*)t["repeticion"]);
+        tratamientos[idx].hora_toma = horaStr;
+      } else {
+        int th_guardado = tratamientos[idx].hora_toma.substring(0,2).toInt();
+        int tm_guardado = tratamientos[idx].hora_toma.substring(3,5).toInt();
+        int minutosGuardado = th_guardado * 60 + tm_guardado;
+        
+        if (abs(minutosTratamiento - horaActual) < abs(minutosGuardado - horaActual)) {
+          tratamientos[idx].id = t["id"];
+          tratamientos[idx].compartimento = comp;
+          tratamientos[idx].nombre_pastilla = String((const char*)t["nombre_pastilla"]);
+          tratamientos[idx].repeticion = String((const char*)t["repeticion"]);
+          tratamientos[idx].hora_toma = horaStr;
+        }
+      }
+    }
+  }
+  
+  // Mostrar tratamientos actualizados
+  Serial.println("\n=== TRATAMIENTOS ACTUALIZADOS ===");
+  for (int i = 0; i < 4; i++) {
+    if (tratamientos[i].compartimento != -1) {
+      Serial.println("Tratamiento en compartimento " + String(i+1) +
+                     " (ID: " + String(tratamientos[i].id) + ")" +
+                     ": " + tratamientos[i].nombre_pastilla +
+                     " a las " + tratamientos[i].hora_toma);
+    }
+  }
+  Serial.println("=================================\n");
 }
 
 void notificarRecordatorioEnBackend(int tratamientoId) {

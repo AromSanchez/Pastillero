@@ -9,6 +9,20 @@ class ConfiguracionNotificaciones(models.Model):
         return f"Notificaciones (Telegram activo: {self.telegram_activo})"
 
 
+class ConfiguracionArduino(models.Model):
+    """Configuración para comunicación con el Arduino ESP32"""
+    ip_arduino = models.GenericIPAddressField(default="10.147.1.1")
+    puerto = models.IntegerField(default=80)
+    activo = models.BooleanField(default=True)
+    
+    class Meta:
+        verbose_name = "Configuración Arduino"
+        verbose_name_plural = "Configuración Arduino"
+    
+    def __str__(self):
+        return f"Arduino en {self.ip_arduino}:{self.puerto}"
+
+
 class Tratamiento(models.Model):
     REPETICION_CHOICES = [
         ("DIARIO", "Diario"),
