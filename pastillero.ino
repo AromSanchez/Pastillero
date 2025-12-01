@@ -30,6 +30,12 @@ int lastButtonState = HIGH;
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 200;
 
+// Variables para modo de llenado de pastillas
+unsigned long buttonPressStartTime = 0;
+const unsigned long LONG_PRESS_TIME = 3000;  // 3 segundos para activar modo llenado
+bool modoLlenado = false;
+bool todosAbiertos = false;  // Estado de los compartimentos en modo llenado
+
 bool buzzerSilenciado = false;
 
 // Estado del patrón de sonido del buzzer (beeps agradables)
@@ -197,8 +203,9 @@ void loop() {
   }
 
   // Manejar pulsos del botón en cualquier estado:
-  // - Si hay compartimientos en alarma (countCompartimientosEnAlarma > 0 y alarmaActiva): abrir y registrar TOMADA.
-  // - Si no hay alarma activa: permitir cerrar compartimientos que quedaron abiertos.
+  // - Pulsación larga (2s): Modo llenado de pastillas (solo si no hay alarma activa)
+  // - Pulsación corta con alarma: abrir y registrar TOMADA
+  // - Pulsación corta sin alarma: cerrar compartimientos abiertos
   manejarBoton(compartimientosEnAlarma, countCompartimientosEnAlarma);
 
   delay(100);
@@ -394,54 +401,108 @@ void notificarRecordatorioEnBackend(int tratamientoId) {
 void manejarBoton(int compartimientosActivos[], int count) {
   int buttonState = digitalRead(BUTTON_PIN);
 
-  if(buttonState == LOW && lastButtonState == HIGH && (millis() - lastDebounceTime) > debounceDelay) {
-    if (count > 0 && alarmaActiva) {
-      // Modo "toma activa": abrir compartimiento y registrar TOMADA una sola vez
-      // Primer pulsado válido: silenciar buzzer y apagar LED
-      digitalWrite(BUZZER_PIN, LOW);
-      digitalWrite(LED_PIN, LOW);
-      buzzerSilenciado = true;
-      buzzerEncendido = false;
-
-      for (int i = 0; i < count; i++) {
-        int idx = compartimientosActivos[i];
-
-        // Si ya se registró la toma para este compartimiento, no hacer nada
-        if (tomaRegistrada[idx]) {
-          continue;
-        }
-
-        // Si aún no se abrió en esta toma, abrir una sola vez y registrar TOMADA
-        if (!yaAbrio[idx]) {
-          servos[idx].write(90);
-          servoStates[idx] = true;
-          yaAbrio[idx] = true;
-          Serial.println("Compartimento " + String(tratamientos[idx].compartimento) + " → 90° (abierto)");
-
-          registrarTomaEnBackend(tratamientos[idx].id, "TOMADA");
-          tomaRegistrada[idx] = true;
-
-          delay(1000);
-        }
-      }
-
-      // Resetear alarma después de gestionar el compartimiento
-      alarmaActiva = false;
-    } else {
-      // Modo "sin toma activa": solo permitir cerrar compartimentos de la lista recibida,
-      // en el mismo orden y con 1 segundo de diferencia entre cada uno.
-      for (int i = 0; i < count; i++) {
-        int idx = compartimientosActivos[i];
-        if (servoStates[idx]) {
-          servos[idx].write(0);
-          servoStates[idx] = false;
-          Serial.println("Cerrar compartimento " + String(idx + 1) + " tras toma registrada");
-          delay(1000);
-        }
-      }
-    }
-
+  // Detectar inicio de pulsación
+  if (buttonState == LOW && lastButtonState == HIGH) {
+    buttonPressStartTime = millis();
     lastDebounceTime = millis();
+  }
+
+  // Detectar pulsación larga (3 segundos) - SOLO si NO hay alarma activa
+  if (buttonState == LOW && lastButtonState == LOW && !alarmaActiva) {
+    unsigned long pressDuration = millis() - buttonPressStartTime;
+    
+    if (pressDuration >= LONG_PRESS_TIME && !modoLlenado) {
+      // Activar modo llenado
+      modoLlenado = true;
+      Serial.println("🔧 MODO LLENADO ACTIVADO");
+      
+      if (!todosAbiertos) {
+        // Abrir todos los compartimentos uno por uno
+        Serial.println("Abriendo compartimentos...");
+        for (int i = 0; i < 4; i++) {
+          servos[i].write(90);
+          servoStates[i] = true;
+          Serial.println("  Compartimento " + String(i+1) + " → ABIERTO");
+          delay(500);  // 500ms entre cada apertura para evitar pico de corriente
+        }
+        todosAbiertos = true;
+        Serial.println("✅ Todos los compartimentos abiertos");
+      } else {
+        // Cerrar todos los compartimentos uno por uno
+        Serial.println("Cerrando compartimentos...");
+        for (int i = 0; i < 4; i++) {
+          servos[i].write(0);
+          servoStates[i] = false;
+          Serial.println("  Compartimento " + String(i+1) + " → CERRADO");
+          delay(500);  // 500ms entre cada cierre
+        }
+        todosAbiertos = false;
+        Serial.println("✅ Todos los compartimentos cerrados");
+      }
+      
+      // Esperar a que suelte el botón
+      while(digitalRead(BUTTON_PIN) == LOW) {
+        delay(10);
+      }
+      modoLlenado = false;
+      lastButtonState = HIGH;
+      return;
+    }
+  }
+
+  // Pulsación corta - comportamiento normal
+  if(buttonState == LOW && lastButtonState == HIGH && (millis() - lastDebounceTime) > debounceDelay) {
+    // Verificar que no sea una pulsación larga en progreso
+    if (millis() - buttonPressStartTime < LONG_PRESS_TIME) {
+      
+      if (count > 0 && alarmaActiva) {
+        // Modo "toma activa": abrir compartimiento y registrar TOMADA una sola vez
+        // Primer pulsado válido: silenciar buzzer y apagar LED
+        digitalWrite(BUZZER_PIN, LOW);
+        digitalWrite(LED_PIN, LOW);
+        buzzerSilenciado = true;
+        buzzerEncendido = false;
+
+        for (int i = 0; i < count; i++) {
+          int idx = compartimientosActivos[i];
+
+          // Si ya se registró la toma para este compartimiento, no hacer nada
+          if (tomaRegistrada[idx]) {
+            continue;
+          }
+
+          // Si aún no se abrió en esta toma, abrir una sola vez y registrar TOMADA
+          if (!yaAbrio[idx]) {
+            servos[idx].write(90);
+            servoStates[idx] = true;
+            yaAbrio[idx] = true;
+            Serial.println("Compartimento " + String(tratamientos[idx].compartimento) + " → 90° (abierto)");
+
+            registrarTomaEnBackend(tratamientos[idx].id, "TOMADA");
+            tomaRegistrada[idx] = true;
+
+            delay(1000);
+          }
+        }
+
+        // Resetear alarma después de gestionar el compartimiento
+        alarmaActiva = false;
+      } else {
+        // Modo "sin toma activa": solo permitir cerrar compartimentos de la lista recibida,
+        // en el mismo orden y con 1 segundo de diferencia entre cada uno.
+        for (int i = 0; i < count; i++) {
+          int idx = compartimientosActivos[i];
+          if (servoStates[idx]) {
+            servos[idx].write(0);
+            servoStates[idx] = false;
+            Serial.println("Cerrar compartimento " + String(idx + 1) + " tras toma registrada");
+            delay(1000);
+          }
+        }
+      }
+
+      lastDebounceTime = millis();
+    }
   }
 
   lastButtonState = buttonState;
