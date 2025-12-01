@@ -36,6 +36,10 @@ const unsigned long LONG_PRESS_TIME = 3000;  // 3 segundos para activar modo lle
 bool modoLlenado = false;
 bool todosAbiertos = false;  // Estado de los compartimentos en modo llenado
 
+// Variables para polling (consulta periódica al backend)
+unsigned long ultimaConsultaBackend = 0;
+const unsigned long INTERVALO_CONSULTA = 60000;  // Consultar cada 60 segundos (1 minuto)
+
 bool buzzerSilenciado = false;
 
 // Estado del patrón de sonido del buzzer (beeps agradables)
@@ -108,9 +112,15 @@ void setup() {
 }
 
 void loop() {
-  // Procesar peticiones HTTP entrantes
+  // Procesar peticiones HTTP entrantes (para sincronización local si está disponible)
   server.handleClient();
   
+  // Consultar backend periódicamente para obtener cambios
+  if (millis() - ultimaConsultaBackend >= INTERVALO_CONSULTA) {
+    Serial.println("\n[POLLING] Consultando backend por actualizaciones...");
+    obtenerTratamientos();
+    ultimaConsultaBackend = millis();
+  }
   struct tm timeinfo;
   if(!getLocalTime(&timeinfo)){
     delay(1000);
