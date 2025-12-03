@@ -8,71 +8,24 @@ from .models import Tratamiento, HistorialToma, ConfiguracionNotificaciones, Con
 from .serializers import TratamientoSerializer, HistorialTomaSerializer, RegistrarTomaSerializer
 
 
-def notificar_arduino_actualizacion():
-    """Envía todos los tratamientos activos al Arduino vía POST.
-    
-    Retorna True si se envió correctamente, False en caso contrario.
-    """
-    try:
-        config = ConfiguracionArduino.objects.first()
-        if not config or not config.activo:
-            print("Arduino no configurado o inactivo")
-            return False
-        
-        tratamientos = Tratamiento.objects.filter(activo=True)
-        serializer = TratamientoSerializer(tratamientos, many=True)
-        
-        url = f"http://{config.ip_arduino}:{config.puerto}/actualizar"
-        response = requests.post(url, json=serializer.data, timeout=5)
-        
-        if response.status_code == 200:
-            print(f"✅ Arduino actualizado correctamente en {config.ip_arduino}")
-            return True
-        else:
-            print(f"❌ Error al actualizar Arduino: {response.status_code}")
-            return False
-    except requests.exceptions.Timeout:
-        print("⏱️ Timeout al conectar con Arduino")
-        return False
-    except requests.exceptions.ConnectionError:
-        print("🔌 No se pudo conectar con Arduino")
-        return False
-    except Exception as e:
-        print(f"❌ Error al notificar Arduino: {e}")
-        return False
-
-
 class TratamientoViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar tratamientos.
+    El Arduino consultará periódicamente (polling) para obtener actualizaciones.
+    """
     queryset = Tratamiento.objects.all()
     serializer_class = TratamientoSerializer
-    
-    def perform_create(self, serializer):
-        """Crear tratamiento y notificar al Arduino"""
-        serializer.save()
-        notificar_arduino_actualizacion()
-    
-    def perform_update(self, serializer):
-        """Actualizar tratamiento y notificar al Arduino"""
-        serializer.save()
-        notificar_arduino_actualizacion()
-    
-    def perform_destroy(self, instance):
-        """Eliminar tratamiento y notificar al Arduino"""
-        instance.delete()
-        notificar_arduino_actualizacion()
 
 
 class HistorialTomaViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet de solo lectura para consultar el historial.
-    El frontend puede hacer GET para ver el historial.
     """
     queryset = HistorialToma.objects.all()
     serializer_class = HistorialTomaSerializer
     
     def get_queryset(self):
         queryset = super().get_queryset()
-        # Filtrar por fecha si se proporciona
         fecha = self.request.query_params.get('fecha', None)
         if fecha:
             queryset = queryset.filter(fecha_hora_real__date=fecha)
@@ -80,10 +33,7 @@ class HistorialTomaViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 def enviar_mensaje_telegram(texto: str) -> bool:
-    """Envía un mensaje de texto sencillo al chat configurado en settings.
-
-    Devuelve True si aparentemente se envió bien, False en caso contrario.
-    """
+    """Envía un mensaje de texto sencillo al chat configurado en settings."""
     try:
         config = ConfiguracionNotificaciones.objects.first()
         if config and not config.telegram_activo:
@@ -95,13 +45,11 @@ def enviar_mensaje_telegram(texto: str) -> bool:
     chat_id = getattr(settings, "TELEGRAM_CHAT_ID", "")
 
     if not bot_token or not chat_id:
-        # Configuración incompleta
         return False
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     try:
         resp = requests.post(url, json={"chat_id": chat_id, "text": texto})
-        # Consideramos éxito si Telegram responde 200 y ok=True
         if resp.status_code == 200:
             data = resp.json()
             return bool(data.get("ok"))
@@ -113,10 +61,7 @@ def enviar_mensaje_telegram(texto: str) -> bool:
 
 @api_view(["GET"])
 def test_telegram(request):
-    """Endpoint de prueba para enviar un mensaje básico a Telegram.
-
-    GET /api/test-telegram/
-    """
+    """Endpoint de prueba para enviar un mensaje básico a Telegram."""
     ok = enviar_mensaje_telegram("✅ Prueba de notificación desde el Pastillero Inteligente")
     if not ok:
         return Response(
@@ -128,11 +73,7 @@ def test_telegram(request):
 
 @api_view(["POST"])
 def notificar_recordatorio(request):
-    """Endpoint para enviar un recordatorio de toma a Telegram.
-
-    POST /api/notificar-recordatorio/
-    Body: { "tratamiento_id": 1 }
-    """
+    """Endpoint para enviar un recordatorio de toma a Telegram."""
     tratamiento_id = request.data.get("tratamiento_id")
     if tratamiento_id is None:
         return Response({"detail": "tratamiento_id es requerido"}, status=status.HTTP_400_BAD_REQUEST)
@@ -163,12 +104,6 @@ def notificar_recordatorio(request):
 def registrar_toma(request):
     """
     Endpoint para que el ESP32 registre cuando se toma (o no) un medicamento.
-    
-    POST /api/registrar-toma/
-    Body: {
-        "tratamiento_id": 1,
-        "estado": "TOMADA"  // o "OMITIDA"
-    }
     """
     serializer = RegistrarTomaSerializer(data=request.data)
     
@@ -201,7 +136,7 @@ def registrar_toma(request):
         tratamiento.stock -= tratamiento.dosis
         tratamiento.save()
 
-    # Enviar notificación a Telegram sobre el resultado de la toma
+    # Enviar notificación a Telegram
     try:
         if estado == "TOMADA":
             mensaje = (
@@ -220,7 +155,6 @@ def registrar_toma(request):
 
         enviar_mensaje_telegram(mensaje)
     except Exception:
-        # No romper el flujo si hay algún problema con Telegram
         pass
 
     return Response(
