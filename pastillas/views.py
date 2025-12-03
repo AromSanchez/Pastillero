@@ -11,10 +11,28 @@ from .serializers import TratamientoSerializer, HistorialTomaSerializer, Registr
 class TratamientoViewSet(viewsets.ModelViewSet):
     """
     ViewSet para gestionar tratamientos.
-    El Arduino consultará periódicamente (polling) para obtener actualizaciones.
+    Publica automáticamente actualizaciones vía MQTT a HiveMQ Cloud para el ESP32.
     """
     queryset = Tratamiento.objects.all()
     serializer_class = TratamientoSerializer
+    
+    def perform_create(self, serializer):
+        """Crear tratamiento y publicar actualización vía MQTT"""
+        from .mqtt_client import publicar_tratamientos
+        serializer.save()
+        publicar_tratamientos()
+    
+    def perform_update(self, serializer):
+        """Actualizar tratamiento y publicar actualización vía MQTT"""
+        from .mqtt_client import publicar_tratamientos
+        serializer.save()
+        publicar_tratamientos()
+    
+    def perform_destroy(self, instance):
+        """Eliminar tratamiento y publicar actualización vía MQTT"""
+        from .mqtt_client import publicar_tratamientos
+        instance.delete()
+        publicar_tratamientos()
 
 
 class HistorialTomaViewSet(viewsets.ReadOnlyModelViewSet):

@@ -11,3 +11,5 @@ tzdata==2024.2
 urllib3==2.2.3
 gunicorn==23.0.0
 whitenoise==6.8.2
+paho-mqtt==2.1.0
+
