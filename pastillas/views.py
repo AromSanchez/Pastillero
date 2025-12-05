@@ -4,8 +4,11 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.conf import settings
 import requests
+import logging
 from .models import Tratamiento, HistorialToma, ConfiguracionNotificaciones, ConfiguracionArduino
 from .serializers import TratamientoSerializer, HistorialTomaSerializer, RegistrarTomaSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class TratamientoViewSet(viewsets.ModelViewSet):
@@ -19,20 +22,32 @@ class TratamientoViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Crear tratamiento y publicar actualización vía MQTT"""
         from .mqtt_client import publicar_tratamientos
+        
+        logger.info("➕ perform_create llamado - Creando tratamiento...")
         serializer.save()
-        publicar_tratamientos()
+        logger.info("✅ Tratamiento creado - Publicando a MQTT...")
+        resultado = publicar_tratamientos()
+        logger.info(f"📡 MQTT publicado (CREATE): {resultado}")
     
     def perform_update(self, serializer):
         """Actualizar tratamiento y publicar actualización vía MQTT"""
         from .mqtt_client import publicar_tratamientos
+        
+        logger.info("🔄 perform_update llamado - Guardando cambios...")
         serializer.save()
-        publicar_tratamientos()
+        logger.info("✅ Cambios guardados - Publicando a MQTT...")
+        resultado = publicar_tratamientos()
+        logger.info(f"📡 MQTT publicado (UPDATE): {resultado}")
     
     def perform_destroy(self, instance):
         """Eliminar tratamiento y publicar actualización vía MQTT"""
         from .mqtt_client import publicar_tratamientos
+        
+        logger.info("🗑️ perform_destroy llamado - Eliminando tratamiento...")
         instance.delete()
-        publicar_tratamientos()
+        logger.info("✅ Tratamiento eliminado - Publicando a MQTT...")
+        resultado = publicar_tratamientos()
+        logger.info(f"📡 MQTT publicado (DELETE): {resultado}")
 
 
 class HistorialTomaViewSet(viewsets.ReadOnlyModelViewSet):
