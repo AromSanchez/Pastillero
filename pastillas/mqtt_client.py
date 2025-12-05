@@ -37,10 +37,14 @@ def publicar_tratamientos():
         client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
         client.tls_set()  # Habilitar TLS/SSL
         
+        # Variable para rastrear el estado de conexión
+        connection_established = {'connected': False}
+        
         # Callbacks para debug
         def on_connect(client, userdata, flags, rc):
             if rc == 0:
                 logger.info(f"✅ Conectado exitosamente a MQTT broker")
+                connection_established['connected'] = True
             else:
                 logger.error(f"❌ Error de conexión MQTT. Código: {rc}")
         
@@ -54,19 +58,38 @@ def publicar_tratamientos():
         logger.info(f"🔌 Conectando a MQTT: {MQTT_BROKER}:{MQTT_PORT}")
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         
-        # Publicar mensaje
+        # Iniciar el loop en segundo plano
+        client.loop_start()
+        
+        # Esperar a que la conexión se establezca (máximo 5 segundos)
+        import time
+        timeout = 5
+        start_time = time.time()
+        while not connection_established['connected'] and (time.time() - start_time) < timeout:
+            time.sleep(0.1)
+        
+        if not connection_established['connected']:
+            logger.error("❌ Timeout esperando conexión MQTT")
+            client.loop_stop()
+            return False
+        
+        # Ahora sí, publicar mensaje
         result = client.publish(MQTT_TOPIC_ACTUALIZAR, mensaje, qos=1)
         
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
             logger.info(f"📤 Mensaje enviado al topic '{MQTT_TOPIC_ACTUALIZAR}'")
             logger.debug(f"📄 Contenido: {mensaje}")
+            
+            # Esperar a que se complete la publicación
+            result.wait_for_publish(timeout=2.0)
         else:
             logger.error(f"❌ Error al publicar mensaje. Código: {result.rc}")
+            client.loop_stop()
             client.disconnect()
             return False
         
-        # Esperar a que se complete la publicación
-        client.loop(timeout=2.0)
+        # Detener loop y desconectar
+        client.loop_stop()
         client.disconnect()
         
         logger.info(f"🔌 Desconectado de MQTT broker")
